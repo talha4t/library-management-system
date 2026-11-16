@@ -56,17 +56,15 @@ cd %USERPROFILE%\Downloads\library-management-system-main
 py run.py
 ```
 
-This opens two windows, one for the librarian and one for a member. To open a single window and choose the role at sign-in, run:
+This opens the sign-in window. Choose **Librarian** or **Member** at the top. `py main.py` does the same thing.
 
-```bat
-py main.py
-```
-
-To open a single window with the member role already selected:
+To open the window with the member role already selected:
 
 ```bat
 py main.py --role member
 ```
+
+To see the librarian and member views side by side, run `py run.py` in one terminal and `py main.py --role member` in a second terminal. Both windows share the same database.
 
 ### Optional: use a virtual environment
 
@@ -134,4 +132,4 @@ The schema diagram is in [Library_Schema_Diagram.pdf](Library_Schema_Diagram.pdf
 | `theme.py` | Colors, fonts, styles |
 | `store.py` | Database access (raw SQL) |
 | `sample_data.py` | Demo data loaded on first run |
-| `run.py` | Opens both windows at once |
+| `run.py` | Starts the app (same as `main.py`) |

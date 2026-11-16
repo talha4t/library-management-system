@@ -1,27 +1,12 @@
-"""Open two windows at once: one for the librarian and one for a member.
+"""Start the app (same as `python main.py`).
 
-    python run.py
+    python run.py                   # sign-in window, Librarian selected
+    python run.py --role member     # sign-in window, Member selected
 
-Both windows use the same database (library.db), so a book the librarian issues
-shows up in the member window after switching pages. Close both windows to exit.
+To see the librarian and member views side by side, open a second window in
+another terminal with `python main.py --role member`. Both use library.db.
 """
-import subprocess
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).parent
-
-
-def main():
-    procs = [subprocess.Popen([sys.executable, str(ROOT / "main.py"), "--role", role], cwd=ROOT)
-             for role in ("librarian", "member")]
-    try:
-        for p in procs:
-            p.wait()
-    except KeyboardInterrupt:
-        for p in procs:
-            p.terminate()
-
+from main import main
 
 if __name__ == "__main__":
     main()

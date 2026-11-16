@@ -20,7 +20,7 @@ def book_dialog(master, book_id, on_saved):
     title = d.field("Title", ttk.Entry)
     author = d.field("Author", ttk.Entry)
     left, right = d.columns()
-    category = d.field("Category", ttk.Combobox, parent=left, values=store.CATEGORIES, state="readonly")
+    category = d.field("Category", ttk.Combobox, parent=left, values=store.categories(), state="readonly")
     copies = d.field("Copies", ttk.Spinbox, parent=right, from_=0, to=999)
     if b:
         title.insert(0, b["title"])
@@ -29,13 +29,15 @@ def book_dialog(master, book_id, on_saved):
         copies.set(b["quantity"])
         label(d.body, f"{store.on_loan(book_id)} copies currently on loan", "small", fg=T.MUTED).pack(anchor="w")
     else:
-        category.set(store.CATEGORIES[0])
+        category.set(category["values"][0] if category["values"] else "")
         copies.set(1)
 
     def save():
         t, a = title.get().strip(), author.get().strip()
         if not t or not a:
             return d.show_error("Title and author are required.")
+        if not category.get():
+            return d.show_error("Create a category first (Catalogue → Categories).")
         try:
             qty = int(copies.get())
         except ValueError:
@@ -81,6 +83,34 @@ def member_dialog(master, member_id, on_saved):
         on_saved("Member updated" if m else f"{n} added")
 
     d.actions("Save changes" if m else "Add member", save)
+    d.open(focus=name)
+
+
+def category_dialog(master, category, on_saved):
+    """category is None (add) or a row from store.category_rows() (rename)."""
+    d = Dialog(master, "Rename category" if category else "New category", 400)
+    name = d.field("Name", ttk.Entry)
+    if category:
+        name.insert(0, category["name"])
+        name.select_range(0, "end")
+        if category["titles"]:
+            label(d.body, f"{category['titles']} book(s) will move to the new name.", "small",
+                  fg=T.MUTED).pack(anchor="w")
+    else:
+        label(d.body, "e.g. Philosophy, Children, Biography", "small", fg=T.MUTED).pack(anchor="w")
+
+    def save():
+        try:
+            if category:
+                store.rename_category(category["category_id"], name.get())
+            else:
+                store.add_category(name.get())
+        except ValueError as e:
+            return d.show_error(str(e))
+        d.destroy()
+        on_saved("Category renamed" if category else f"“{name.get().strip()}” added")
+
+    d.actions("Save" if category else "Add category", save)
     d.open(focus=name)
 
 
@@ -221,7 +251,7 @@ class BooksPage(Page):
         bar.pack(fill="x", pady=(0, 12))
         self.search = SearchEntry(bar, "Search title, author or category…", self.refresh)
         self.search.pack(side="left", fill="x", expand=True)
-        self.category = ttk.Combobox(bar, values=[ALL_CATEGORIES] + store.CATEGORIES, state="readonly", width=16)
+        self.category = ttk.Combobox(bar, values=[ALL_CATEGORIES] + store.categories(), state="readonly", width=16)
         self.category.set(ALL_CATEGORIES)
         self.category.pack(side="left", padx=(12, 0))
         self.category.bind("<<ComboboxSelected>>", lambda e: self.refresh())
@@ -363,6 +393,68 @@ class MembersPage(Page):
         try:
             store.delete_member(member_id)
             self.saved("Member deleted")
+        except ValueError as e:
+            self.toast(str(e), error=True)
+
+    def saved(self, msg):
+        self.toast(msg)
+        self.refresh()
+
+
+class CategoriesPage(Page):
+    def build(self):
+        actions, self.subtitle = page_header(self, "Categories")
+        ttk.Button(actions, text="+  New category", style="Primary.TButton",
+                   command=lambda: category_dialog(self, None, self.saved)).pack()
+
+        foot = tk.Frame(self, bg=T.BG)
+        foot.pack(side="bottom", fill="x", pady=(12, 0))
+        self.delete_btn = ttk.Button(foot, text="Delete", style="Danger.TButton", command=self.delete)
+        self.delete_btn.pack(side="right")
+        self.rename_btn = ttk.Button(foot, text="Rename", style="Secondary.TButton",
+                                     command=lambda: self.rename(self.table.selected()))
+        self.rename_btn.pack(side="right", padx=(0, 8))
+        self.hint = label(foot, "", "body", fg=T.MUTED)
+        self.hint.pack(side="left")
+
+        self.table = Table(self, [("name", "Category", 260, "w"), ("titles", "Titles", 100, "center"),
+                                  ("copies", "Copies", 100, "center")],
+                           height=12, on_select=self.on_select, on_open=self.rename,
+                           empty_text="No categories yet. Add one to start organising books.")
+        self.table.pack(fill="both", expand=True)
+        self.refresh()
+
+    def refresh(self):
+        self.rows = {r["category_id"]: r for r in store.category_rows()}
+        self.table.load([(cid, [r["name"], r["titles"], r["copies"]], None if r["titles"] else "muted")
+                         for cid, r in self.rows.items()])
+        self.subtitle.configure(text=f"{len(self.rows)} categories · used to group books in the catalogue")
+        self.on_select(None)
+
+    def on_select(self, category_id):
+        state = "normal" if category_id else "disabled"
+        self.rename_btn.configure(state=state)
+        self.delete_btn.configure(state=state)
+        if category_id:
+            self.hint.configure(text=f"Selected: {self.rows[category_id]['name']}", fg=T.TEXT)
+        else:
+            self.hint.configure(text="Select a category to rename or delete it. Only empty ones can be deleted.",
+                                fg=T.MUTED)
+
+    def rename(self, category_id):
+        if category_id:
+            category_dialog(self, self.rows[category_id], self.saved)
+
+    def delete(self):
+        category_id = self.table.selected()
+        if not category_id:
+            return
+        name = self.rows[category_id]["name"]
+        if not confirm(self, "Delete category?", f"“{name}” will be removed."):
+            return
+        try:
+            store.delete_category(category_id)
+            self.saved("Category deleted")
         except ValueError as e:
             self.toast(str(e), error=True)
 
@@ -559,9 +651,9 @@ class HistoryPage(Page):
 
 SECTIONS = [
     ("", [("dashboard", "Dashboard", "▦")]),
-    ("CATALOGUE", [("books", "Books", "▤"), ("members", "Members", "☷")]),
+    ("CATALOGUE", [("books", "Books", "▤"), ("categories", "Categories", "◫"), ("members", "Members", "☷")]),
     ("CIRCULATION", [("circulation", "Issue & Return", "⇄"), ("overdue", "Overdue", "◷"),
                      ("history", "History", "↺")]),
 ]
-PAGES = {"dashboard": DashboardPage, "books": BooksPage, "members": MembersPage,
+PAGES = {"dashboard": DashboardPage, "books": BooksPage, "categories": CategoriesPage, "members": MembersPage,
          "circulation": CirculationPage, "overdue": OverduePage, "history": HistoryPage}

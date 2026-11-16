@@ -14,12 +14,15 @@ import sample_data
 DB_PATH = Path(__file__).parent / "library.db"
 FINE_PER_DAY = 5.0  # Tk per late day
 LOAN_DAYS = 14
-CATEGORIES = sample_data.CATEGORIES
 
 sqlite3.register_adapter(date, lambda d: d.isoformat())
 sqlite3.register_converter("DATE", lambda b: date.fromisoformat(b.decode()))
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS Category (
+    category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        VARCHAR(50) NOT NULL UNIQUE
+);
 CREATE TABLE IF NOT EXISTS Books (
     book_id   INTEGER PRIMARY KEY AUTOINCREMENT,
     title     VARCHAR(200) NOT NULL,
@@ -77,7 +80,11 @@ def init():
     with closing(_conn()) as conn, conn:
         conn.executescript(SCHEMA)
         if conn.execute("SELECT COUNT(*) FROM Books").fetchone()[0]:
+            # older databases had no Category table: fill it from the books
+            if not conn.execute("SELECT COUNT(*) FROM Category").fetchone()[0]:
+                conn.execute("INSERT INTO Category (name) SELECT DISTINCT category FROM Books")
             return
+        conn.executemany("INSERT INTO Category (name) VALUES (?)", [(c,) for c in sample_data.CATEGORIES])
         conn.executemany("INSERT INTO Books VALUES (:book_id, :title, :author, :category, :quantity)",
                          sample_data.BOOKS)
         conn.executemany("INSERT INTO Members VALUES (:member_id, :name, :phone, :email)",
@@ -163,6 +170,51 @@ def current_fine(r):
     if r["return_date"] is not None:
         return float(r["fine"])
     return fine_for(r["due_date"], date.today())
+
+
+def categories():
+    return [r["name"] for r in _query("SELECT name FROM Category ORDER BY name")]
+
+
+def category_rows():
+    """Each category with how many titles and copies use it."""
+    return _query("""
+        SELECT c.category_id, c.name, COUNT(b.book_id) AS titles, COALESCE(SUM(b.quantity), 0) AS copies
+        FROM Category c LEFT JOIN Books b ON b.category = c.name
+        GROUP BY c.category_id, c.name ORDER BY c.name""")
+
+
+# ---------- category writes ----------
+def _check_category_name(name, ignore_id=None):
+    name = name.strip()
+    if not name:
+        raise ValueError("Category name is required.")
+    if len(name) > 50:
+        raise ValueError("Category name must be 50 characters or fewer.")
+    clash = _one("SELECT category_id FROM Category WHERE LOWER(name) = LOWER(?)", (name,))
+    if clash and clash["category_id"] != ignore_id:
+        raise ValueError(f"A category called “{name}” already exists.")
+    return name
+
+
+def add_category(name):
+    _execute("INSERT INTO Category (name) VALUES (?)", (_check_category_name(name),))
+
+
+def rename_category(category_id, new_name):
+    old = _one("SELECT name FROM Category WHERE category_id = ?", (category_id,))["name"]
+    new_name = _check_category_name(new_name, ignore_id=category_id)
+    with closing(_conn()) as conn, conn:
+        conn.execute("UPDATE Category SET name = ? WHERE category_id = ?", (new_name, category_id))
+        conn.execute("UPDATE Books SET category = ? WHERE category = ?", (new_name, old))
+
+
+def delete_category(category_id):
+    row = _one("SELECT name FROM Category WHERE category_id = ?", (category_id,))
+    used = _one("SELECT COUNT(*) AS n FROM Books WHERE category = ?", (row["name"],))["n"]
+    if used:
+        raise ValueError(f"{used} book(s) use “{row['name']}”. Move them to another category first.")
+    _execute("DELETE FROM Category WHERE category_id = ?", (category_id,))
 
 
 # ---------- book writes ----------

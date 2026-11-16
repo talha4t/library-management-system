@@ -7,6 +7,7 @@ A desktop library management app built with Python (Tkinter) for a Database Mana
 **Librarian**
 - Dashboard: totals, books that need attention, recent activity, copies by category
 - Books and members: add, edit, delete, search, filter
+- Categories: create, rename (books follow the new name), delete when empty
 - Issue and return books, with automatic late fines (5 Tk per day)
 - Overdue list and full borrow history
 
@@ -114,7 +115,8 @@ On first run the app creates `library.db` and fills it with sample data. Delete 
 
 | Table | Columns |
 |---|---|
-| Books | book_id, title, author, category, quantity |
+| Category | category_id, name (unique) |
+| Books | book_id, title, author, category → Category.name, quantity |
 | Members | member_id, name, phone, email |
 | Borrow | borrow_id, book_id → Books, member_id → Members, issue_date, due_date, return_date, fine |
 | Librarian | librarian_id, username, password |

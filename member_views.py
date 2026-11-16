@@ -68,7 +68,7 @@ class BrowsePage(MemberPage):
         bar.pack(fill="x", pady=(0, 12))
         self.search = SearchEntry(bar, "Search title, author or category…", self.refresh)
         self.search.pack(side="left", fill="x", expand=True)
-        self.category = ttk.Combobox(bar, values=[ALL_CATEGORIES] + store.CATEGORIES, state="readonly", width=16)
+        self.category = ttk.Combobox(bar, values=[ALL_CATEGORIES] + store.categories(), state="readonly", width=16)
         self.category.set(ALL_CATEGORIES)
         self.category.pack(side="left", padx=(12, 0))
         self.category.bind("<<ComboboxSelected>>", lambda e: self.refresh())
